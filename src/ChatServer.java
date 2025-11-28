@@ -20,18 +20,14 @@ public class ChatServer {
 
     //로그인 중인 아이디 집합
     private static Set<String> names = new HashSet<>();
-
     //전체 클라이언트 출력 스트림
     private static Set<PrintWriter> writers = new HashSet<>();
-
-    //귓속말용: 아이디 -> 출력 스트림
+    //귓속말용 출력 스트림
     private static Map<String, PrintWriter> writerMap = new HashMap<>();
-
     //유저 파일 관련
     private static final String USER_FILE = "users.dat";
     private static final Object userFileLock = new Object();
     private static final SecureRandom random = new SecureRandom();
-
     public static void main(String[] args) throws Exception {
         System.out.println("The chat server is running...");
         ExecutorService pool = Executors.newFixedThreadPool(500);
@@ -41,7 +37,6 @@ public class ChatServer {
             }
         }
     }
-
     // 유저 정보 클래스
     private static class UserInfo {
         String id;
@@ -49,9 +44,11 @@ public class ChatServer {
         String email;
     }
 
+
+
     //멀티쓰레드 구현
     private static class Handler implements Runnable {
-        private String name;          // 로그인한 아이디
+        private String name;
         private Socket socket;
         private Scanner in;
         private PrintWriter out;
@@ -61,14 +58,16 @@ public class ChatServer {
             this.socket = socket;
         }
 
-        //실행부분
+
+
+        //돌아가는 부분
         @Override
         public void run() {
             try {
                 in = new Scanner(socket.getInputStream());
                 out = new PrintWriter(socket.getOutputStream(), true);
 
-                //첫 줄에서 REGISTER 또는 LOGIN 처리
+                //첫 줄에서 REGISTER/LOGIN 처리
                 if (!in.hasNextLine()) {
                     return;
                 }
@@ -88,23 +87,23 @@ public class ChatServer {
                     return;
                 }
 
-                //여기까지 오면 로그인 성공
+                //로그인 성공
                 sendUserList();
                 registerWriter();
                 notifyJoin();
 
-                //채팅 루프
+                //채팅 시작
                 listenLoop();
 
             } catch (Exception e) {
                 System.out.println("Handler error: " + e);
             } finally {
-                // 접속 종료 처리
+                // 접속 종료
                 cleanup();
                 try {
                     socket.close();
                 } catch (IOException e) {
-                    // ignore
+                    e.printStackTrace();
                 }
             }
         }
@@ -116,18 +115,15 @@ public class ChatServer {
                 out.println("LOGINFAIL Invalid login format");
                 return false;
             }
-
             String userId = parts[1].trim();
             String password = parts[2];
-
             if (userId.isEmpty()) {
                 out.println("LOGINFAIL ID is empty");
                 return false;
             }
-
             UserInfo info = new UserInfo();
             int code = verifyUser(userId, password, info);
-            // 0=OK, 1=not found, 2=wrong pw, 3=file error
+
             if (code == 1) {
                 out.println("LOGINFAIL No such user");
                 return false;
@@ -138,7 +134,6 @@ public class ChatServer {
                 out.println("LOGINFAIL Server user file error");
                 return false;
             }
-
             synchronized (names) {
                 if (names.contains(userId)) {
                     // 이미 로그인 중인 아이디
@@ -147,13 +142,10 @@ public class ChatServer {
                 }
                 names.add(userId);
             }
-
             this.name = userId;
             this.loggedIn = true;
-
             String safeName = info.name == null ? "" : info.name;
             String safeEmail = info.email == null ? "" : info.email;
-
             out.println("LOGINOK " + userId + " " + safeName + " " + safeEmail);
             System.out.println("User logged in: " + userId);
             return true;
@@ -166,19 +158,16 @@ public class ChatServer {
                 out.println("REGISTERFAIL Invalid register format");
                 return;
             }
-
             String id = parts[1].trim();
             String pw = parts[2];
             String nm = parts[3].trim();
             String em = parts[4].trim();
-
             if (id.isEmpty() || pw.isEmpty() || nm.isEmpty() || em.isEmpty()) {
                 out.println("REGISTERFAIL Empty field exists");
                 return;
             }
-
             int result = registerUser(id, pw, nm, em);
-            // 0=OK, 1=duplicate, 2=file error
+            // 0=OK, 1=중복, 2=파일 에러
             if (result == 0) {
                 out.println("REGISTERSUCCESS");
                 System.out.println("User registered: " + id);
@@ -242,7 +231,7 @@ public class ChatServer {
             }
         }
 
-        //메시지 브로드캐스트
+        //메시지 다 보이게 하기
         private void broadcast(String msg) {
             synchronized (writers) {
                 for (PrintWriter w : writers) {
@@ -258,14 +247,12 @@ public class ChatServer {
                 out.println("MESSAGE [system] Whisper format: @username message");
                 return;
             }
-
             String targetId = msg.substring(1, spaceIdx);
             String body = msg.substring(spaceIdx + 1).trim();
             if (body.isEmpty()) {
                 out.println("MESSAGE [system] Whisper message is empty");
                 return;
             }
-
             PrintWriter targetWriter;
             synchronized (writerMap) {
                 targetWriter = writerMap.get(targetId);
@@ -274,6 +261,7 @@ public class ChatServer {
                 out.println("MESSAGE [system] User '" + targetId + "' not found");
                 return;
             }
+
 
             out.println("WHISPER to " + targetId + ": " + body);
             if (targetWriter != out) {
@@ -287,14 +275,12 @@ public class ChatServer {
                 return;
             }
             System.out.println(name + " is leaving");
-
             synchronized (names) {
                 names.remove(name);
             }
             synchronized (writerMap) {
                 writerMap.remove(name);
             }
-
             synchronized (writers) {
                 writers.remove(out);
                 for (PrintWriter w : writers) {
@@ -328,14 +314,14 @@ public class ChatServer {
 
                     String computed = makeHash(plainPw, saltHex);
                     if (!storedHash.equals(computed)) {
-                        return 2; // pw mismatch
+                        return 2;
                     }
                     outInfo.id = fId;
                     outInfo.name = name;
                     outInfo.email = email;
-                    return 0; // OK
+                    return 0;
                 }
-                return 1; // not found
+                return 1;
             } catch (FileNotFoundException e) {
                 return 3;
             } finally {
@@ -357,7 +343,6 @@ public class ChatServer {
             } catch (IOException e) {
                 return 2;
             }
-
             Scanner fileScanner = null;
             try {
                 fileScanner = new Scanner(f);
@@ -365,20 +350,18 @@ public class ChatServer {
                     String line = fileScanner.nextLine();
                     String[] parts = line.split(",");
                     if (parts.length >= 1 && parts[0].equals(userId)) {
-                        return 1; // duplicate id
+                        return 1;
                     }
                 }
             } catch (FileNotFoundException e) {
-                // ignore
+                e.printStackTrace();
             } finally {
                 if (fileScanner != null) {
                     fileScanner.close();
                 }
             }
-
             String saltHex = generateSalt();
             String hash = makeHash(plainPw, saltHex);
-
             FileWriter fw = null;
             try {
                 fw = new FileWriter(f, true);
@@ -392,20 +375,19 @@ public class ChatServer {
                     try {
                         fw.close();
                     } catch (IOException e) {
-                        // ignore
+                        e.printStackTrace();
                     }
                 }
             }
         }
     }
 
-    //해시/솔트 유틸
+    //해시 및 Salt 계산 함수
     private static String generateSalt() {
         byte[] bytes = new byte[16];
         random.nextBytes(bytes);
         return bytesToHex(bytes);
     }
-
     private static String makeHash(String plainPw, String saltHex) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -418,7 +400,6 @@ public class ChatServer {
             throw new RuntimeException("SHA-256 error", e);
         }
     }
-
     private static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {
@@ -428,7 +409,6 @@ public class ChatServer {
         }
         return sb.toString();
     }
-
     private static byte[] hexToBytes(String hex) {
         int len = hex.length();
         byte[] data = new byte[len / 2];
